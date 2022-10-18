@@ -1,0 +1,100 @@
+"use strict";
+var __rest = (this && this.__rest) || function (s, e) {
+    var t = {};
+    for (var p in s) if (Object.prototype.hasOwnProperty.call(s, p) && e.indexOf(p) < 0)
+        t[p] = s[p];
+    if (s != null && typeof Object.getOwnPropertySymbols === "function")
+        for (var i = 0, p = Object.getOwnPropertySymbols(s); i < p.length; i++) {
+            if (e.indexOf(p[i]) < 0 && Object.prototype.propertyIsEnumerable.call(s, p[i]))
+                t[p[i]] = s[p[i]];
+        }
+    return t;
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.adaptSearchFieldsConfig = exports.adaptResultFieldsConfig = exports.adaptFilterConfig = exports.adaptFacetConfig = void 0;
+const search_ui_1 = require("@elastic/search-ui");
+function adaptFilterType(type) {
+    if (type === "any")
+        return {};
+    if (type === "all")
+        return { type: "and" };
+    return { type: "and" };
+}
+function adaptFacetConfig(facets) {
+    if (!facets)
+        return;
+    const convertInvalidFacetsToUndefined = ([fieldName, config]) => {
+        if (config.type != "value") {
+            console.warn(`search-ui-site-search-connector: Dropping ${fieldName} facet, only value facets are supported in Site Search`);
+            return undefined;
+        }
+        if (config.sort) {
+            console.warn("search-ui-site-search-connector: Site Search does not support 'sort' on facets");
+        }
+        if (config.size) {
+            console.warn("search-ui-site-search-connector: Site Search does not support 'size' on facets");
+        }
+        return [fieldName, config];
+    };
+    const config = Object.entries(facets)
+        .map(convertInvalidFacetsToUndefined)
+        .filter((v) => v) // filter out undefined
+        .map(([key]) => key); // get keys
+    if (!config.length)
+        return;
+    return config;
+}
+exports.adaptFacetConfig = adaptFacetConfig;
+function adaptFilterConfig(filters) {
+    if (!filters || Object.keys(filters).length === 0)
+        return;
+    return filters.reduce((acc, filter) => {
+        const fieldName = filter.field;
+        const fieldValue = filter.values;
+        if (acc[fieldName]) {
+            console.warn("search-ui-site-search-connector: More than one filter found for a single field");
+            return acc;
+        }
+        if (filter.type && filter.type !== "all" && filter.type !== "any") {
+            console.warn(`search-ui-site-search-connector: Unsupported filter type "${filter.type}" found, only "all" and "any" are currently supported`);
+            return acc;
+        }
+        if (fieldValue.find((v) => typeof v === "object") !== undefined) {
+            if (fieldValue.length > 1) {
+                console.warn("search-ui-site-search-connector: Cannot apply more than 1 none-value filters to a single field");
+                return acc;
+            }
+            const firstValue = fieldValue[0];
+            if (search_ui_1.helpers.isFilterValueRange(firstValue)) {
+                // eslint-disable-next-line
+                const { name } = firstValue, rest = __rest(firstValue, ["name"]);
+                acc[fieldName] = Object.assign({ type: "range" }, rest);
+                return acc;
+            }
+            else {
+                return acc;
+            }
+        }
+        acc[fieldName] = Object.assign(Object.assign({}, adaptFilterType(filter.type)), { values: fieldValue });
+        return acc;
+    }, {});
+}
+exports.adaptFilterConfig = adaptFilterConfig;
+function adaptResultFieldsConfig(resultFieldsConfig) {
+    if (!resultFieldsConfig)
+        return [];
+    const fetchFields = Object.keys(resultFieldsConfig);
+    const highlightFields = Object.entries(resultFieldsConfig).reduce((acc, [fieldName, fieldConfig]) => {
+        if (!fieldConfig.snippet)
+            return acc;
+        return Object.assign(Object.assign({}, acc), { [fieldName]: fieldConfig.snippet });
+    }, {});
+    return [fetchFields, highlightFields];
+}
+exports.adaptResultFieldsConfig = adaptResultFieldsConfig;
+function adaptSearchFieldsConfig(searchFieldsConfig) {
+    if (!searchFieldsConfig)
+        return [];
+    return Object.keys(searchFieldsConfig);
+}
+exports.adaptSearchFieldsConfig = adaptSearchFieldsConfig;
